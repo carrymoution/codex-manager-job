@@ -2,19 +2,52 @@
  * 支付页面 JavaScript
  */
 
-const COUNTRY_CURRENCY_MAP = {
-    SG: 'SGD', US: 'USD', TR: 'TRY', JP: 'JPY',
-    HK: 'HKD', GB: 'GBP', EU: 'EUR', AU: 'AUD',
-    CA: 'CAD', IN: 'INR', BR: 'BRL', MX: 'MXN',
-};
-
 let selectedPlan = 'plus';
 let generatedLink = '';
+let countryCurrencyMap = {};  // 动态从接口加载
 
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
     loadAccounts();
+    loadCountries();
 });
+
+// 加载国家/货币列表
+async function loadCountries() {
+    const sel = document.getElementById('country-select');
+    try {
+        const resp = await fetch('/api/payment/countries');
+        const data = await resp.json();
+        const countries = data.countries || [];
+
+        // 重建映射表
+        countryCurrencyMap = {};
+        countries.forEach(c => {
+            countryCurrencyMap[c.country_code] = c.currency;
+        });
+
+        // 记住当前选中值
+        const current = sel.value;
+
+        // 渲染选项
+        sel.innerHTML = countries.map(c =>
+            `<option value="${c.country_code}">${c.country_name} (${c.currency})</option>`
+        ).join('');
+
+        // 恢复选中或默认 SG
+        sel.value = current && countryCurrencyMap[current] ? current : 'SG';
+        onCountryChange();
+
+        if (!data.success) {
+            console.warn('国家列表使用内置 fallback:', data.error);
+        }
+    } catch (e) {
+        console.error('加载国家列表失败:', e);
+        sel.innerHTML = '<option value="SG">Singapore (SGD)</option>';
+        countryCurrencyMap = { SG: 'SGD' };
+        onCountryChange();
+    }
+}
 
 // 加载账号列表
 async function loadAccounts() {
@@ -37,7 +70,7 @@ async function loadAccounts() {
 // 国家切换
 function onCountryChange() {
     const country = document.getElementById('country-select').value;
-    const currency = COUNTRY_CURRENCY_MAP[country] || 'USD';
+    const currency = countryCurrencyMap[country] || '';
     document.getElementById('currency-display').value = currency;
 }
 
