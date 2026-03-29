@@ -28,6 +28,21 @@ class JSONEncodedDict(TypeDecorator):
         return json.loads(value)
 
 
+class JSONEncodedList(TypeDecorator):
+    """JSON 编码列表类型"""
+    impl = Text
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        return json.dumps(value, ensure_ascii=False)
+
+    def process_result_value(self, value: Optional[str], dialect):
+        if value is None:
+            return []
+        return json.loads(value)
+
+
 class Account(Base):
     """已注册账号表"""
     __tablename__ = 'accounts'
@@ -127,6 +142,90 @@ class RegistrationTask(Base):
     email_service = relationship('EmailService')
 
 
+class ScheduledRegistrationTask(Base):
+    """批量注册定时任务表"""
+    __tablename__ = 'scheduled_registration_tasks'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)
+    enabled = Column(Boolean, default=True, nullable=False)
+    trigger_type = Column(String(20), nullable=False)
+    interval_minutes = Column(Integer)
+    daily_time = Column(String(5))
+    batch_config = Column(JSONEncodedDict, nullable=False)
+    last_run_at = Column(DateTime)
+    last_run_status = Column(String(20), default='idle', nullable=False)
+    last_error = Column(Text)
+    last_batch_id = Column(String(36))
+    next_run_at = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    runs = relationship(
+        'ScheduledRegistrationTaskRun',
+        back_populates='scheduled_task',
+        cascade='all, delete-orphan',
+        order_by='desc(ScheduledRegistrationTaskRun.created_at)',
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': self.id,
+            'name': self.name,
+            'enabled': self.enabled,
+            'trigger_type': self.trigger_type,
+            'interval_minutes': self.interval_minutes,
+            'daily_time': self.daily_time,
+            'batch_config': self.batch_config or {},
+            'last_run_at': self.last_run_at.isoformat() if self.last_run_at else None,
+            'last_run_status': self.last_run_status,
+            'last_error': self.last_error,
+            'last_batch_id': self.last_batch_id,
+            'next_run_at': self.next_run_at.isoformat() if self.next_run_at else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class ScheduledRegistrationTaskRun(Base):
+    """定时批量注册任务运行实例表"""
+    __tablename__ = 'scheduled_registration_task_runs'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    scheduled_task_id = Column(Integer, ForeignKey('scheduled_registration_tasks.id'), nullable=False, index=True)
+    batch_id = Column(String(36), index=True)
+    trigger_source = Column(String(20), nullable=False, default='schedule')
+    status = Column(String(20), nullable=False, default='running')
+    total_count = Column(Integer, nullable=False, default=0)
+    completed_count = Column(Integer, nullable=False, default=0)
+    success_count = Column(Integer, nullable=False, default=0)
+    failed_count = Column(Integer, nullable=False, default=0)
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    finished_at = Column(DateTime)
+    error_message = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    scheduled_task = relationship('ScheduledRegistrationTask', back_populates='runs')
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': self.id,
+            'scheduled_task_id': self.scheduled_task_id,
+            'batch_id': self.batch_id,
+            'trigger_source': self.trigger_source,
+            'status': self.status,
+            'total_count': self.total_count,
+            'completed_count': self.completed_count,
+            'success_count': self.success_count,
+            'failed_count': self.failed_count,
+            'started_at': self.started_at.isoformat() if self.started_at else None,
+            'finished_at': self.finished_at.isoformat() if self.finished_at else None,
+            'error_message': self.error_message,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class Setting(Base):
     """系统设置表"""
     __tablename__ = 'settings'
@@ -161,6 +260,7 @@ class Sub2ApiService(Base):
     name = Column(String(100), nullable=False)  # 服务名称
     api_url = Column(String(500), nullable=False)  # API URL (host)
     api_key = Column(Text, nullable=False)  # x-api-key
+    target_group_ids = Column(JSONEncodedList, default=list)  # 目标分组 ID 列表
     enabled = Column(Boolean, default=True)
     priority = Column(Integer, default=0)  # 优先级
     created_at = Column(DateTime, default=datetime.utcnow)

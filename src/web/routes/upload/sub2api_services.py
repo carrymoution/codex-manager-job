@@ -4,7 +4,7 @@ Sub2API 服务管理 API 路由
 
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ....database import crud
 from ....database.session import get_db
@@ -19,6 +19,7 @@ class Sub2ApiServiceCreate(BaseModel):
     name: str
     api_url: str
     api_key: str
+    target_group_ids: List[int] = Field(default_factory=list)
     enabled: bool = True
     priority: int = 0
 
@@ -27,6 +28,7 @@ class Sub2ApiServiceUpdate(BaseModel):
     name: Optional[str] = None
     api_url: Optional[str] = None
     api_key: Optional[str] = None
+    target_group_ids: Optional[List[int]] = None
     enabled: Optional[bool] = None
     priority: Optional[int] = None
 
@@ -36,6 +38,7 @@ class Sub2ApiServiceResponse(BaseModel):
     name: str
     api_url: str
     has_key: bool
+    target_group_ids: List[int] = Field(default_factory=list)
     enabled: bool
     priority: int
     created_at: Optional[str] = None
@@ -57,12 +60,26 @@ class Sub2ApiUploadRequest(BaseModel):
     priority: int = 50
 
 
+def _normalize_group_ids(group_ids: Optional[List[int]]) -> List[int]:
+    normalized: List[int] = []
+    for group_id in group_ids or []:
+        if group_id is None:
+            continue
+        value = int(group_id)
+        if value <= 0:
+            raise HTTPException(status_code=400, detail="target_group_ids 只能包含正整数")
+        if value not in normalized:
+            normalized.append(value)
+    return normalized
+
+
 def _to_response(svc) -> Sub2ApiServiceResponse:
     return Sub2ApiServiceResponse(
         id=svc.id,
         name=svc.name,
         api_url=svc.api_url,
         has_key=bool(svc.api_key),
+        target_group_ids=_normalize_group_ids(getattr(svc, "target_group_ids", []) or []),
         enabled=svc.enabled,
         priority=svc.priority,
         created_at=svc.created_at.isoformat() if svc.created_at else None,
@@ -89,6 +106,7 @@ async def create_sub2api_service(request: Sub2ApiServiceCreate):
             name=request.name,
             api_url=request.api_url,
             api_key=request.api_key,
+            target_group_ids=_normalize_group_ids(request.target_group_ids),
             enabled=request.enabled,
             priority=request.priority,
         )
@@ -117,6 +135,7 @@ async def get_sub2api_service_full(service_id: int):
             "name": svc.name,
             "api_url": svc.api_url,
             "api_key": svc.api_key,
+            "target_group_ids": _normalize_group_ids(getattr(svc, "target_group_ids", []) or []),
             "enabled": svc.enabled,
             "priority": svc.priority,
         }
@@ -138,6 +157,8 @@ async def update_sub2api_service(service_id: int, request: Sub2ApiServiceUpdate)
         # api_key 留空则保持原值
         if request.api_key:
             update_data["api_key"] = request.api_key
+        if request.target_group_ids is not None:
+            update_data["target_group_ids"] = _normalize_group_ids(request.target_group_ids)
         if request.enabled is not None:
             update_data["enabled"] = request.enabled
         if request.priority is not None:
@@ -201,6 +222,7 @@ async def upload_accounts_to_sub2api(request: Sub2ApiUploadRequest):
         request.account_ids,
         api_url,
         api_key,
+        target_group_ids=_normalize_group_ids(getattr(svc, "target_group_ids", []) or []),
         concurrency=request.concurrency,
         priority=request.priority,
     )

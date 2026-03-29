@@ -96,13 +96,12 @@ def generate_plus_link(
     account: Account,
     proxy: Optional[str] = None,
     country: str = "SG",
-    currency: Optional[str] = None,
 ) -> str:
     """生成 Plus 支付链接（后端携带账号 cookie 发请求）"""
     if not account.access_token:
         raise ValueError("账号缺少 access_token")
 
-    currency = currency or _COUNTRY_CURRENCY_MAP.get(country, "USD")
+    currency = _COUNTRY_CURRENCY_MAP.get(country, "USD")
     headers = {
         "Authorization": f"Bearer {account.access_token}",
         "Content-Type": "application/json",
@@ -146,13 +145,12 @@ def generate_team_link(
     seat_quantity: int = 5,
     proxy: Optional[str] = None,
     country: str = "SG",
-    currency: Optional[str] = None,
 ) -> str:
     """生成 Team 支付链接（后端携带账号 cookie 发请求）"""
     if not account.access_token:
         raise ValueError("账号缺少 access_token")
 
-    currency = currency or _COUNTRY_CURRENCY_MAP.get(country, "USD")
+    currency = _COUNTRY_CURRENCY_MAP.get(country, "USD")
     headers = {
         "Authorization": f"Bearer {account.access_token}",
         "Content-Type": "application/json",
@@ -204,7 +202,7 @@ def generate_team_link(
              "&elements_session_client[is_aggregation_expected]=false"
              "&client_attribution_metadata[merchant_integration_additional_elements][0]=payment"
              "&client_attribution_metadata[merchant_integration_additional_elements][1]=address"
-             f"&key={data['publishable_key']}"
+             f"&key={data["publishable_key"]}"
         ,
         proxies=_build_proxies(proxy),
         timeout=30,

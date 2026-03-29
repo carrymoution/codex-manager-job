@@ -28,3 +28,27 @@ def test_index_template_uses_versioned_static_assets():
     assert '/static/css/style.css?v={{ static_version }}' in template
     assert '/static/js/utils.js?v={{ static_version }}' in template
     assert '/static/js/app.js?v={{ static_version }}' in template
+
+
+def test_scheduled_tasks_template_uses_versioned_static_assets():
+    template = Path("templates/scheduled_tasks.html").read_text(encoding="utf-8")
+
+    assert '/static/favicon.svg?v={{ static_version }}' in template
+    assert '/static/css/style.css?v={{ static_version }}' in template
+    assert '/static/js/utils.js?v={{ static_version }}' in template
+    assert '/static/js/scheduled_tasks.js?v={{ static_version }}' in template
+
+
+def test_primary_templates_include_scheduled_tasks_nav_link():
+    templates = [
+        "templates/index.html",
+        "templates/accounts.html",
+        "templates/email_services.html",
+        "templates/payment.html",
+        "templates/settings.html",
+        "templates/scheduled_tasks.html",
+    ]
+
+    for template_path in templates:
+        template = Path(template_path).read_text(encoding="utf-8")
+        assert '/scheduled-tasks' in template

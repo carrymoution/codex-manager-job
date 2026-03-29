@@ -10,7 +10,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from .base import BaseEmailService, EmailServiceError, EmailServiceType, OTPNoOpenAISenderEmailServiceError, RateLimitedEmailServiceError, get_email_code_settings
+from .base import BaseEmailService, EmailServiceError, EmailServiceType, RateLimitedEmailServiceError
 from ..config.constants import OTP_CODE_PATTERN
 from ..core.http_client import HTTPClient, RequestConfig
 
@@ -231,12 +231,10 @@ class CloudMailService(BaseEmailService):
     ) -> Optional[str]:
         logger.info(f"正在从 Cloud Mail 邮箱 {email} 获取验证码...")
 
-        poll_interval = get_email_code_settings()["poll_interval"]
         start_time = time.time()
         seen_mail_ids: set = set()
 
         while time.time() - start_time < timeout:
-            self._raise_if_cancelled("等待 Cloud Mail 验证码时任务已取消")
             try:
                 token = self._get_public_token()
                 mails = self._make_request(
@@ -254,19 +252,8 @@ class CloudMailService(BaseEmailService):
                     mails = mails["list"]
 
                 if not isinstance(mails, list):
-                    self._sleep_with_cancel(poll_interval)
+                    time.sleep(3)
                     continue
-
-                if mails:
-                    sender_values = [
-                        mail for mail in mails
-                        if isinstance(mail, dict) and (mail.get("sendEmail") or mail.get("sender"))
-                    ]
-                    if sender_values and not self._batch_has_openai_sender(
-                        sender_values,
-                        lambda item: item.get("sendEmail") or item.get("sender"),
-                    ):
-                        raise OTPNoOpenAISenderEmailServiceError()
 
                 for mail in mails:
                     msg_timestamp = self._get_received_timestamp(mail)
@@ -290,7 +277,7 @@ class CloudMailService(BaseEmailService):
                         part for part in [sender, sender_name, subject, text_body, content] if part
                     ).strip()
 
-                    if not self._is_openai_candidate_message(sender, sender_name, subject, text_body, content):
+                    if "openai" not in search_text.lower():
                         continue
 
                     code = self._extract_otp_from_text(search_text, pattern)
@@ -299,11 +286,9 @@ class CloudMailService(BaseEmailService):
                         logger.info(f"从 Cloud Mail 邮箱 {email} 找到验证码: {code}")
                         return code
             except Exception as e:
-                if isinstance(e, OTPNoOpenAISenderEmailServiceError):
-                    raise
                 logger.debug(f"检查 Cloud Mail 邮件时出错: {e}")
 
-            self._sleep_with_cancel(poll_interval)
+            time.sleep(3)
 
         logger.warning(f"等待 Cloud Mail 验证码超时: {email}")
         return None

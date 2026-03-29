@@ -35,8 +35,7 @@ class GenerateLinkRequest(BaseModel):
     seat_quantity: int = 5
     proxy: Optional[str] = None
     auto_open: bool = False  # 生成后是否自动无痕打开
-    country: str = "SG"  # 计费国家，决定货币
-    currency: Optional[str] = None  # 前端动态获取的货币代码，优先于静态映射表
+    country: str = "SG"  # 计费国家，决定货币  # 生成后是否自动无痕打开
 
 
 class OpenIncognitoRequest(BaseModel):
@@ -71,7 +70,7 @@ def generate_payment_link(request: GenerateLinkRequest):
 
         try:
             if request.plan_type == "plus":
-                link = generate_plus_link(account, proxy, country=request.country, currency=request.currency)
+                link = generate_plus_link(account, proxy, country=request.country)
             elif request.plan_type == "team":
                 link = generate_team_link(
                     account,
@@ -80,7 +79,6 @@ def generate_payment_link(request: GenerateLinkRequest):
                     seat_quantity=request.seat_quantity,
                     proxy=proxy,
                     country=request.country,
-                    currency=request.currency,
                 )
             else:
                 raise HTTPException(status_code=400, detail="plan_type 必须为 plus 或 team")

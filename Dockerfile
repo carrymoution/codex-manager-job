@@ -4,14 +4,12 @@ FROM python:3.11-slim
 # 设置工作目录
 WORKDIR /app
 
-ARG DEFAULT_WEBUI_PORT=15555
-
 # 设置环境变量
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     # WebUI 默认配置
     WEBUI_HOST=0.0.0.0 \
-    WEBUI_PORT=${DEFAULT_WEBUI_PORT} \
+    WEBUI_PORT=15555 \
     LOG_LEVEL=info \
     DEBUG=0
 
@@ -32,7 +30,7 @@ RUN pip install --no-cache-dir --upgrade pip \
 COPY . .
 
 # 暴露端口
-EXPOSE ${DEFAULT_WEBUI_PORT}
+EXPOSE 15555
 
 # 启动 WebUI
 CMD ["python", "webui.py"]

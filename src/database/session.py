@@ -119,6 +119,11 @@ class DatabaseSessionManager:
             ("newapi_services", "channel_models", "TEXT"),
             ("proxies", "is_default", "BOOLEAN DEFAULT 0"),
             ("cpa_services", "include_proxy_url", "BOOLEAN DEFAULT 0"),
+            ("sub2api_services", "target_group_ids", "TEXT"),
+            ("scheduled_registration_task_runs", "total_count", "INTEGER DEFAULT 0"),
+            ("scheduled_registration_task_runs", "completed_count", "INTEGER DEFAULT 0"),
+            ("scheduled_registration_task_runs", "success_count", "INTEGER DEFAULT 0"),
+            ("scheduled_registration_task_runs", "failed_count", "INTEGER DEFAULT 0"),
         ]
 
         # 确保新表存在（create_tables 已处理，此处兜底）

@@ -5,10 +5,10 @@ Tempmail.lol 邮箱服务实现
 import re
 import time
 import logging
-from typing import Callable, Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
 
-from .base import BaseEmailService, EmailServiceError, EmailServiceType, OTPNoOpenAISenderEmailServiceError, get_email_code_settings
+from .base import BaseEmailService, EmailServiceError, EmailServiceType
 from ..core.http_client import HTTPClient, RequestConfig
 from ..config.constants import OTP_CODE_PATTERN
 
@@ -212,12 +212,10 @@ class TempmailService(BaseEmailService):
 
         logger.info(f"正在等待邮箱 {email} 的验证码...")
 
-        poll_interval = get_email_code_settings()["poll_interval"]
         start_time = time.time()
         seen_ids = set()
 
         while time.time() - start_time < timeout:
-            self._raise_if_cancelled("等待 Tempmail 验证码时任务已取消")
             try:
                 # 获取邮件列表
                 response = self.http_client.get(
@@ -227,7 +225,7 @@ class TempmailService(BaseEmailService):
                 )
 
                 if response.status_code != 200:
-                    self._sleep_with_cancel(poll_interval)
+                    time.sleep(3)
                     continue
 
                 data = response.json()
@@ -240,20 +238,13 @@ class TempmailService(BaseEmailService):
                 email_list = data.get("emails", []) if isinstance(data, dict) else []
 
                 if not isinstance(email_list, list):
-                    self._sleep_with_cancel(poll_interval)
+                    time.sleep(3)
                     continue
 
                 ordered_emails = self._sort_items_by_message_time(
                     email_list,
                     lambda item: item.get("date") if isinstance(item, dict) else None,
                 )
-
-                if ordered_emails:
-                    if not self._batch_has_openai_sender(
-                        ordered_emails,
-                        lambda item: item.get("from") if isinstance(item, dict) else None,
-                    ):
-                        raise OTPNoOpenAISenderEmailServiceError()
 
                 for msg in ordered_emails:
                     if not isinstance(msg, dict):
@@ -284,7 +275,7 @@ class TempmailService(BaseEmailService):
                     content = "\n".join([sender, subject, body, html])
 
                     # 检查是否是 OpenAI 邮件
-                    if not self._is_openai_candidate_message(sender, subject, body, html):
+                    if "openai" not in sender and "openai" not in content.lower():
                         continue
 
                     # 提取验证码
@@ -298,12 +289,10 @@ class TempmailService(BaseEmailService):
                         return code
 
             except Exception as e:
-                if isinstance(e, OTPNoOpenAISenderEmailServiceError):
-                    raise
                 logger.debug(f"检查邮件时出错: {e}")
 
             # 等待一段时间再检查
-            self._sleep_with_cancel(poll_interval)
+            time.sleep(3)
 
         logger.warning(f"等待验证码超时: {email}")
         return None
@@ -380,7 +369,7 @@ class TempmailService(BaseEmailService):
         self,
         email: str,
         token: str,
-        callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+        callback: callable = None,
         timeout: int = 120
     ) -> Optional[str]:
         """
@@ -395,7 +384,6 @@ class TempmailService(BaseEmailService):
         Returns:
             验证码或 None
         """
-        poll_interval = get_email_code_settings()["poll_interval"]
         start_time = time.time()
         seen_ids = set()
         check_count = 0
@@ -414,7 +402,7 @@ class TempmailService(BaseEmailService):
             try:
                 data = self.get_inbox(token)
                 if not data:
-                    time.sleep(poll_interval)
+                    time.sleep(3)
                     continue
 
                 # 检查 inbox 是否过期
@@ -477,7 +465,7 @@ class TempmailService(BaseEmailService):
                         "message": "检查邮件时出错"
                     })
 
-            time.sleep(poll_interval)
+            time.sleep(3)
 
         if callback:
             callback({

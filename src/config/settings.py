@@ -10,8 +10,6 @@ from pydantic import BaseModel, field_validator
 from pydantic.types import SecretStr
 from dataclasses import dataclass
 
-from .constants import APP_NAME, APP_VERSION, DEFAULT_WEBUI_HOST, DEFAULT_WEBUI_PORT
-
 
 class SettingCategory(str, Enum):
     """设置分类"""
@@ -44,13 +42,13 @@ SETTING_DEFINITIONS: Dict[str, SettingDefinition] = {
     # 应用信息
     "app_name": SettingDefinition(
         db_key="app.name",
-        default_value=APP_NAME,
+        default_value="OpenAI/Codex CLI 自动注册系统",
         category=SettingCategory.GENERAL,
         description="应用名称"
     ),
     "app_version": SettingDefinition(
         db_key="app.version",
-        default_value=APP_VERSION,
+        default_value="2.0.0",
         category=SettingCategory.GENERAL,
         description="应用版本"
     ),
@@ -72,13 +70,13 @@ SETTING_DEFINITIONS: Dict[str, SettingDefinition] = {
     # Web UI 配置
     "webui_host": SettingDefinition(
         db_key="webui.host",
-        default_value=DEFAULT_WEBUI_HOST,
+        default_value="0.0.0.0",
         category=SettingCategory.WEBUI,
         description="Web UI 监听地址"
     ),
     "webui_port": SettingDefinition(
         db_key="webui.port",
-        default_value=DEFAULT_WEBUI_PORT,
+        default_value=15555,
         category=SettingCategory.WEBUI,
         description="Web UI 监听端口"
     ),
@@ -358,18 +356,6 @@ SETTING_DEFINITIONS: Dict[str, SettingDefinition] = {
         category=SettingCategory.EMAIL,
         description="验证码轮询间隔（秒）"
     ),
-    "email_code_resend_max_retries": SettingDefinition(
-        db_key="email_code.resend_max_retries",
-        default_value=2,
-        category=SettingCategory.EMAIL,
-        description="收件箱未找到验证码时，最多重新发送验证码的次数"
-    ),
-    "email_code_non_openai_sender_resend_max_retries": SettingDefinition(
-        db_key="email_code.non_openai_sender_resend_max_retries",
-        default_value=1,
-        category=SettingCategory.EMAIL,
-        description="检测到非 OpenAI 发件人干扰时，最多重新发送验证码的次数"
-    ),
 
     # Outlook 配置
     "outlook_provider_priority": SettingDefinition(
@@ -396,12 +382,6 @@ SETTING_DEFINITIONS: Dict[str, SettingDefinition] = {
         category=SettingCategory.EMAIL,
         description="Outlook OAuth 默认 Client ID"
     ),
-    "outlook_require_recipient_match": SettingDefinition(
-        db_key="outlook.require_recipient_match",
-        default_value=True,
-        category=SettingCategory.EMAIL,
-        description="Outlook 验证码识别时是否校验收件人匹配"
-    ),
 }
 
 # 属性名到数据库键名的映射（用于向后兼容）
@@ -427,12 +407,9 @@ SETTING_TYPES: Dict[str, Type] = {
     "cpa_enabled": bool,
     "email_code_timeout": int,
     "email_code_poll_interval": int,
-    "email_code_resend_max_retries": int,
-    "email_code_non_openai_sender_resend_max_retries": int,
     "outlook_provider_priority": list,
     "outlook_health_failure_threshold": int,
     "outlook_health_disable_duration": int,
-    "outlook_require_recipient_match": bool,
 }
 
 # 需要作为 SecretStr 处理的字段
@@ -607,8 +584,8 @@ class Settings(BaseModel):
     """
 
     # 应用信息
-    app_name: str = APP_NAME
-    app_version: str = APP_VERSION
+    app_name: str = "OpenAI/Codex CLI 自动注册系统"
+    app_version: str = "2.0.0"
     debug: bool = False
 
     # 数据库配置
@@ -631,8 +608,8 @@ class Settings(BaseModel):
         return v
 
     # Web UI 配置
-    webui_host: str = DEFAULT_WEBUI_HOST
-    webui_port: int = DEFAULT_WEBUI_PORT
+    webui_host: str = "0.0.0.0"
+    webui_port: int = 15555
     webui_secret_key: SecretStr = SecretStr("your-secret-key-change-in-production")
     webui_access_password: SecretStr = SecretStr("admin123")
 
@@ -730,15 +707,12 @@ class Settings(BaseModel):
     # 验证码配置
     email_code_timeout: int = 120
     email_code_poll_interval: int = 3
-    email_code_resend_max_retries: int = 2
-    email_code_non_openai_sender_resend_max_retries: int = 1
 
     # Outlook 配置
     outlook_provider_priority: List[str] = ["imap_old", "imap_new", "graph_api"]
     outlook_health_failure_threshold: int = 5
     outlook_health_disable_duration: int = 60
     outlook_default_client_id: str = "24d9a0ed-8787-4584-883c-2fd79308940a"
-    outlook_require_recipient_match: bool = True
 
 
 # 全局配置实例

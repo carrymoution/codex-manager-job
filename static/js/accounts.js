@@ -33,10 +33,8 @@ const elements = {
     exportBtn: document.getElementById('export-btn'),
     exportMenu: document.getElementById('export-menu'),
     selectAll: document.getElementById('select-all'),
-    firstPage: document.getElementById('first-page'),
     prevPage: document.getElementById('prev-page'),
     nextPage: document.getElementById('next-page'),
-    lastPage: document.getElementById('last-page'),
     pageInfo: document.getElementById('page-info'),
     detailModal: document.getElementById('detail-modal'),
     modalBody: document.getElementById('modal-body'),
@@ -152,13 +150,6 @@ function initEventListeners() {
     });
 
     // 分页
-    elements.firstPage.addEventListener('click', () => {
-        if (currentPage > 1 && !isLoading) {
-            currentPage = 1;
-            loadAccounts();
-        }
-    });
-
     elements.prevPage.addEventListener('click', () => {
         if (currentPage > 1 && !isLoading) {
             currentPage--;
@@ -170,14 +161,6 @@ function initEventListeners() {
         const totalPages = Math.ceil(totalAccounts / pageSize);
         if (currentPage < totalPages && !isLoading) {
             currentPage++;
-            loadAccounts();
-        }
-    });
-
-    elements.lastPage.addEventListener('click', () => {
-        const totalPages = Math.ceil(totalAccounts / pageSize);
-        if (currentPage < totalPages && !isLoading) {
-            currentPage = totalPages;
             loadAccounts();
         }
     });
@@ -444,10 +427,8 @@ function togglePassword(element, password) {
 function updatePagination() {
     const totalPages = Math.max(1, Math.ceil(totalAccounts / pageSize));
 
-    elements.firstPage.disabled = currentPage <= 1;
     elements.prevPage.disabled = currentPage <= 1;
     elements.nextPage.disabled = currentPage >= totalPages;
-    elements.lastPage.disabled = currentPage >= totalPages;
 
     elements.pageInfo.textContent = `第 ${currentPage} 页 / 共 ${totalPages} 页`;
 }

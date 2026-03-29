@@ -8,7 +8,18 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy import and_, or_, desc, asc, func
 
-from .models import Account, EmailService, RegistrationTask, Setting, Proxy, CpaService, Sub2ApiService, NewapiService
+from .models import (
+    Account,
+    EmailService,
+    RegistrationTask,
+    ScheduledRegistrationTask,
+    ScheduledRegistrationTaskRun,
+    Setting,
+    Proxy,
+    CpaService,
+    Sub2ApiService,
+    NewapiService,
+)
 
 
 TOKEN_FIELD_NAMES = ("access_token", "refresh_token", "id_token", "session_token")
@@ -384,6 +395,242 @@ def fail_incomplete_registration_tasks(db: Session, error_message: str) -> List[
 
 
 # 为 API 路由添加别名
+def create_scheduled_registration_task(
+    db: Session,
+    name: str,
+    trigger_type: str,
+    batch_config: Dict[str, Any],
+    enabled: bool = True,
+    interval_minutes: Optional[int] = None,
+    daily_time: Optional[str] = None,
+    next_run_at: Optional[datetime] = None,
+    last_run_status: str = "idle",
+) -> ScheduledRegistrationTask:
+    task = ScheduledRegistrationTask(
+        name=name,
+        enabled=enabled,
+        trigger_type=trigger_type,
+        interval_minutes=interval_minutes,
+        daily_time=daily_time,
+        batch_config=batch_config,
+        next_run_at=next_run_at,
+        last_run_status=last_run_status,
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+def get_scheduled_registration_task_by_id(
+    db: Session,
+    task_id: int,
+) -> Optional[ScheduledRegistrationTask]:
+    return db.query(ScheduledRegistrationTask).filter(
+        ScheduledRegistrationTask.id == task_id
+    ).first()
+
+
+def get_scheduled_registration_tasks(
+    db: Session,
+    enabled: Optional[bool] = None,
+) -> List[ScheduledRegistrationTask]:
+    query = db.query(ScheduledRegistrationTask)
+    if enabled is not None:
+        query = query.filter(ScheduledRegistrationTask.enabled == enabled)
+    return query.order_by(desc(ScheduledRegistrationTask.updated_at)).all()
+
+
+def get_due_scheduled_registration_tasks(
+    db: Session,
+    now: datetime,
+) -> List[ScheduledRegistrationTask]:
+    return db.query(ScheduledRegistrationTask).filter(
+        ScheduledRegistrationTask.enabled == True,
+        ScheduledRegistrationTask.next_run_at.isnot(None),
+        ScheduledRegistrationTask.next_run_at <= now,
+    ).order_by(
+        asc(ScheduledRegistrationTask.next_run_at),
+        asc(ScheduledRegistrationTask.id),
+    ).all()
+
+
+def update_scheduled_registration_task(
+    db: Session,
+    task_id: int,
+    **kwargs,
+) -> Optional[ScheduledRegistrationTask]:
+    task = get_scheduled_registration_task_by_id(db, task_id)
+    if not task:
+        return None
+
+    if "batch_config" in kwargs and kwargs["batch_config"] is not None:
+        task.batch_config = kwargs["batch_config"]
+        flag_modified(task, "batch_config")
+        del kwargs["batch_config"]
+
+    for key, value in kwargs.items():
+        if hasattr(task, key):
+            setattr(task, key, value)
+
+    task.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+def delete_scheduled_registration_task(db: Session, task_id: int) -> bool:
+    task = get_scheduled_registration_task_by_id(db, task_id)
+    if not task:
+        return False
+
+    db.query(ScheduledRegistrationTaskRun).filter(
+        ScheduledRegistrationTaskRun.scheduled_task_id == task_id
+    ).delete(synchronize_session=False)
+    db.delete(task)
+    db.commit()
+    return True
+
+
+def create_scheduled_registration_task_run(
+    db: Session,
+    scheduled_task_id: int,
+    trigger_source: str,
+    status: str = "running",
+    batch_id: Optional[str] = None,
+    total_count: int = 0,
+    completed_count: int = 0,
+    success_count: int = 0,
+    failed_count: int = 0,
+    started_at: Optional[datetime] = None,
+    finished_at: Optional[datetime] = None,
+    error_message: Optional[str] = None,
+) -> ScheduledRegistrationTaskRun:
+    run = ScheduledRegistrationTaskRun(
+        scheduled_task_id=scheduled_task_id,
+        trigger_source=trigger_source,
+        status=status,
+        batch_id=batch_id,
+        total_count=total_count,
+        completed_count=completed_count,
+        success_count=success_count,
+        failed_count=failed_count,
+        started_at=started_at or datetime.utcnow(),
+        finished_at=finished_at,
+        error_message=error_message,
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    return run
+
+
+def get_scheduled_registration_task_run_by_id(
+    db: Session,
+    run_id: int,
+) -> Optional[ScheduledRegistrationTaskRun]:
+    return db.query(ScheduledRegistrationTaskRun).filter(
+        ScheduledRegistrationTaskRun.id == run_id
+    ).first()
+
+
+def get_scheduled_registration_task_run_by_batch_id(
+    db: Session,
+    batch_id: str,
+) -> Optional[ScheduledRegistrationTaskRun]:
+    return db.query(ScheduledRegistrationTaskRun).filter(
+        ScheduledRegistrationTaskRun.batch_id == batch_id
+    ).order_by(desc(ScheduledRegistrationTaskRun.created_at)).first()
+
+
+def get_scheduled_registration_task_runs(
+    db: Session,
+    task_id: int,
+    limit: int = 10,
+) -> List[ScheduledRegistrationTaskRun]:
+    return db.query(ScheduledRegistrationTaskRun).filter(
+        ScheduledRegistrationTaskRun.scheduled_task_id == task_id
+    ).order_by(
+        desc(ScheduledRegistrationTaskRun.created_at),
+        desc(ScheduledRegistrationTaskRun.id),
+    ).limit(limit).all()
+
+
+def get_recent_scheduled_registration_task_runs_map(
+    db: Session,
+    task_ids: Iterable[int],
+    limit_per_task: int = 10,
+) -> Dict[int, List[ScheduledRegistrationTaskRun]]:
+    result: Dict[int, List[ScheduledRegistrationTaskRun]] = {
+        int(task_id): [] for task_id in task_ids
+    }
+
+    for task_id in result:
+        result[task_id] = get_scheduled_registration_task_runs(
+            db,
+            task_id,
+            limit=limit_per_task,
+        )
+
+    return result
+
+
+def get_latest_running_scheduled_registration_task_run(
+    db: Session,
+    task_id: int,
+) -> Optional[ScheduledRegistrationTaskRun]:
+    return db.query(ScheduledRegistrationTaskRun).filter(
+        ScheduledRegistrationTaskRun.scheduled_task_id == task_id,
+        ScheduledRegistrationTaskRun.status == "running",
+    ).order_by(
+        desc(ScheduledRegistrationTaskRun.created_at),
+        desc(ScheduledRegistrationTaskRun.id),
+    ).first()
+
+
+def update_scheduled_registration_task_run(
+    db: Session,
+    run_id: int,
+    **kwargs,
+) -> Optional[ScheduledRegistrationTaskRun]:
+    run = get_scheduled_registration_task_run_by_id(db, run_id)
+    if not run:
+        return None
+
+    for key, value in kwargs.items():
+        if hasattr(run, key):
+            setattr(run, key, value)
+
+    run.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(run)
+    return run
+
+
+def fail_running_scheduled_registration_task_runs(
+    db: Session,
+    error_message: str,
+) -> List[int]:
+    runs = db.query(ScheduledRegistrationTaskRun).filter(
+        ScheduledRegistrationTaskRun.status == "running"
+    ).all()
+
+    if not runs:
+        return []
+
+    now = datetime.utcnow()
+    run_ids: List[int] = []
+    for run in runs:
+        run.status = "failed"
+        run.error_message = error_message
+        run.finished_at = now
+        run.updated_at = now
+        run_ids.append(run.id)
+
+    db.commit()
+    return run_ids
+
+
 get_account = get_account_by_id
 get_registration_task = get_registration_task_by_uuid
 
@@ -532,42 +779,6 @@ def delete_proxy(db: Session, proxy_id: int) -> bool:
     db.commit()
     return True
 
-
-def delete_proxies_by_ids(db: Session, proxy_ids: Iterable[int]) -> Dict[str, Any]:
-    """按 ID 批量删除代理配置。"""
-    normalized_ids = []
-    seen_ids: Set[int] = set()
-    for proxy_id in proxy_ids:
-        current_id = int(proxy_id)
-        if current_id <= 0 or current_id in seen_ids:
-            continue
-        seen_ids.add(current_id)
-        normalized_ids.append(current_id)
-
-    if not normalized_ids:
-        return {
-            "requested_count": 0,
-            "deleted_count": 0,
-            "not_found_ids": [],
-        }
-
-    existing_ids = {
-        proxy_id
-        for (proxy_id,) in db.query(Proxy.id).filter(Proxy.id.in_(normalized_ids)).all()
-    }
-    not_found_ids = [proxy_id for proxy_id in normalized_ids if proxy_id not in existing_ids]
-
-    deleted_count = 0
-    if existing_ids:
-        deleted_count = db.query(Proxy).filter(Proxy.id.in_(existing_ids)).delete(synchronize_session=False)
-        db.commit()
-
-    return {
-        "requested_count": len(normalized_ids),
-        "deleted_count": deleted_count,
-        "not_found_ids": not_found_ids,
-    }
-
 def delete_disabled_proxies(db: Session) -> int:
     """删除所有已禁用代理"""
     deleted = db.query(Proxy).filter(Proxy.enabled == False).delete(synchronize_session=False)
@@ -713,6 +924,7 @@ def create_sub2api_service(
     name: str,
     api_url: str,
     api_key: str,
+    target_group_ids: Optional[List[int]] = None,
     enabled: bool = True,
     priority: int = 0
 ) -> Sub2ApiService:
@@ -721,6 +933,7 @@ def create_sub2api_service(
         name=name,
         api_url=api_url,
         api_key=api_key,
+        target_group_ids=list(target_group_ids or []),
         enabled=enabled,
         priority=priority,
     )
@@ -752,6 +965,8 @@ def update_sub2api_service(db: Session, service_id: int, **kwargs) -> Optional[S
     if not svc:
         return None
     for key, value in kwargs.items():
+        if key == "target_group_ids" and value is not None:
+            value = list(value)
         setattr(svc, key, value)
     db.commit()
     db.refresh(svc)

@@ -66,7 +66,7 @@
   - Team Manager 服务列表管理（多服务，连接测试）
   - Outlook OAuth 参数
   - 注册参数（超时、重试、密码长度等）
-  - 验证码等待配置（超时时间、轮询间隔、收件箱未找到时最多重发次数）
+  - 验证码等待配置
   - 数据库管理（备份、清理）
   - 支持远程 PostgreSQL
 
@@ -103,20 +103,6 @@ cp .env.example .env
 | `APP_DATABASE_URL` | 数据库连接字符串 | `data/database.db` |
 
 > 优先级：命令行参数 > 环境变量（`.env`）> 数据库设置 > 默认值
-
-### 修改端口
-
-默认端口是 `15555`。现在已经收敛到少数几个固定入口：
-
-- 本地临时启动改端口：直接用 `python webui.py --port 18080`
-- 本地通过 `.env` 改端口：设置 `APP_PORT=18080`
-- 源码里的默认端口：修改 `src/config/constants.py` 里的 `DEFAULT_WEBUI_PORT`
-- Docker Compose 默认端口：修改 `docker-compose.yml` 顶部的 `x-webui-port`
-- Docker 镜像构建默认端口：修改 `Dockerfile` 里的 `ARG DEFAULT_WEBUI_PORT`
-
-补充说明：
-- `src/config/constants.py` 的 `DEFAULT_WEBUI_PORT` 会同时影响默认 Web UI 端口、默认回调地址和 e2e 脚本默认地址。
-- `docker-compose.yml` 里已经把端口映射、容器内 `WEBUI_PORT` 和健康检查统一绑到同一个 `x-webui-port`，改一处就够。
 
 ### 启动 Web UI
 
@@ -155,18 +141,6 @@ docker-compose up -d
 ```
 你可以在 `docker-compose.yml` 中修改相关的环境变量，例如配置端口或者设置 `WEBUI_ACCESS_PASSWORD` 访问密码。
 
-如果要修改 Docker Compose 对外端口，直接改文件顶部这一行即可：
-
-```yaml
-x-webui-port: &webui-port 15555
-```
-
-这一个值会同时同步到：
-
-- 宿主机端口映射
-- 容器内 `WEBUI_PORT`
-- 健康检查访问地址
-
 #### 直接使用 docker run
 
 如果你不想使用 docker-compose，也可以直接拉取并运行镜像：
@@ -190,19 +164,6 @@ docker run -d \
 - `LOG_LEVEL`: 日志级别，如 `info`, `debug`
 
 > **注意**：`-v $(pwd)/data:/app/data` 挂载参数非常重要，它确保了你的数据库文件和账户信息在容器重启或更新后不会丢失。
-
-如果你要把容器端口改成 `18080`，`-p` 和 `WEBUI_PORT` 需要一起改：
-
-```bash
-docker run -d \
-  -p 18080:18080 \
-  -e WEBUI_HOST=0.0.0.0 \
-  -e WEBUI_PORT=18080 \
-  -e WEBUI_ACCESS_PASSWORD=your_secure_password \
-  -v $(pwd)/data:/app/data \
-  --name codex-register \
-  ghcr.io/yunxilyf/codex-register:latest
-```
 
 ### 使用远程 PostgreSQL
 
@@ -374,7 +335,7 @@ docker-compose up -d
 
 ### 配置说明
 
-**端口映射**：默认 `15555` 端口，修改 `docker-compose.yml` 顶部的 `x-webui-port` 即可。
+**端口映射**：默认 `15555` 端口，可在 `docker-compose.yml` 中修改。
 
 **数据持久化**：
 ```yaml
@@ -386,9 +347,9 @@ volumes:
 **环境变量配置**：
 ```yaml
 environment:
-  WEBUI_ACCESS_PASSWORD: mypassword
-  WEBUI_HOST: 0.0.0.0
-  WEBUI_PORT: 15555
+  - APP_ACCESS_PASSWORD=mypassword
+  - APP_HOST=0.0.0.0
+  - APP_PORT=15555
 ```
 
 ### 常用命令
@@ -412,8 +373,6 @@ docker-compose build --no-cache
 - 代理优先级：动态代理 > 代理列表（随机/默认） > 直连
 - CPA / Sub2API / Team Manager 上传始终直连，不走代理；其中 CPA 可选把账号记录的代理写入 auth file 的 `proxy_url`
 - 注册时自动随机生成用户名和生日（年龄范围 18-45 岁）
-- 验证码重发：收件箱超时未获取到验证码时，自动重新发送验证码并再次轮询，最多重发次数可在「验证码配置」中设置（默认 2 次，设为 0 禁用）
-- 支付链接货币与计费国家动态对应，从 ChatGPT API 实时获取国家/货币列表（缓存 7 天），不再受限于内置静态映射表
 - 支付链接生成使用账号 access_token 鉴权，走全局代理配置
 - 无痕打开支付页默认调用系统 Chrome/Edge 的隐私模式
 - 订阅状态自动检测调用 `chatgpt.com/backend-api/me`，走全局代理

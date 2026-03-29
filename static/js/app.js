@@ -695,11 +695,19 @@ async function handleBatchRegistration(requestData) {
     displayedLogs.clear();  // 清空日志去重集合
     toastShown = false;  // 重置 toast 标志
 
-    const count = parseInt(elements.batchCount.value) || 5;
+    const count = parseInt(elements.batchCount.value, 10) || 5;
     const intervalMin = parseInt(elements.intervalMin.value) || 5;
     const intervalMax = parseInt(elements.intervalMax.value) || 30;
     const concurrency = parseInt(elements.concurrencyCount.value) || 3;
     const mode = elements.concurrencyMode.value || 'pipeline';
+
+    if (count < 1 || count > 1000) {
+        const message = '注册数量必须在 1-1000 之间';
+        addLog('error', `[错误] ${message}`);
+        toast.error(message);
+        resetButtons();
+        return;
+    }
 
     requestData.count = count;
     requestData.interval_min = intervalMin;

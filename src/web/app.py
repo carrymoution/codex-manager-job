@@ -1,4 +1,4 @@
-"""
+﻿"""
 FastAPI 应用主文件
 轻量级 Web UI，支持注册、账号管理、设置
 """
@@ -21,6 +21,7 @@ from ..config.settings import get_settings
 from ..database import crud
 from ..database.session import get_db
 from .routes import api_router
+from .routes.scheduled_tasks import scheduled_task_scheduler
 from .routes.websocket import router as ws_router
 from .task_manager import task_manager
 
@@ -181,6 +182,13 @@ def create_app() -> FastAPI:
             return _redirect_to_login(request)
         return templates.TemplateResponse(request=request, name="settings.html", context={"request": request})
 
+    @app.get("/scheduled-tasks", response_class=HTMLResponse)
+    async def scheduled_tasks_page(request: Request):
+        """定时任务页面"""
+        if not _is_authenticated(request):
+            return _redirect_to_login(request)
+        return templates.TemplateResponse(request=request, name="scheduled_tasks.html", context={"request": request})
+
     @app.get("/payment", response_class=HTMLResponse)
     async def payment_page(request: Request):
         """支付页面"""
@@ -201,6 +209,7 @@ def create_app() -> FastAPI:
         # 设置 TaskManager 的事件循环
         loop = asyncio.get_event_loop()
         task_manager.set_loop(loop)
+        await scheduled_task_scheduler.start()
 
         stale_error = "服务启动时检测到未完成的历史任务，已标记失败，请重新发起。"
         with get_db() as db:
@@ -216,7 +225,7 @@ def create_app() -> FastAPI:
 
     @app.on_event("shutdown")
     async def shutdown_event():
-        """应用关闭事件"""
+        await scheduled_task_scheduler.stop()
         logger.info("应用关闭")
 
     return app
@@ -244,3 +253,4 @@ if __name__ == "__main__":
         access_log=settings.debug,
         ws="websockets",
     )
+

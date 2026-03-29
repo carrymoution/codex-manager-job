@@ -29,9 +29,7 @@ const elements = {
     selectAllServices: document.getElementById('select-all-services'),
     // 代理列表
     proxiesTable: document.getElementById('proxies-table'),
-    selectAllProxies: document.getElementById('select-all-proxies'),
     addProxyBtn: document.getElementById('add-proxy-btn'),
-    batchDeleteProxiesBtn: document.getElementById('batch-delete-proxies-btn'),
     testAllProxiesBtn: document.getElementById('test-all-proxies-btn'),
     deleteDisabledProxiesBtn: document.getElementById('delete-disabled-proxies-btn'),
     batchImportProxyBtn: document.getElementById('batch-import-proxy-btn'),
@@ -91,8 +89,6 @@ const elements = {
 
 // 选中的服务 ID
 let selectedServiceIds = new Set();
-let selectedProxyIds = new Set();
-let disabledProxyCount = 0;
 
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
@@ -256,20 +252,6 @@ function initEventListeners() {
         elements.testAllProxiesBtn.addEventListener('click', handleTestAllProxies);
     }
 
-    if (elements.selectAllProxies) {
-        elements.selectAllProxies.addEventListener('change', (e) => {
-            toggleSelectAllProxies(e.target.checked);
-        });
-    }
-
-    if (elements.batchDeleteProxiesBtn) {
-        elements.batchDeleteProxiesBtn.addEventListener('click', handleBatchDeleteProxies);
-    }
-
-    if (elements.deleteDisabledProxiesBtn) {
-        elements.deleteDisabledProxiesBtn.addEventListener('click', handleDeleteDisabledProxies);
-    }
-
     if (elements.closeProxyModal) {
         elements.closeProxyModal.addEventListener('click', closeProxyModal);
     }
@@ -417,8 +399,6 @@ async function loadSettings() {
         if (data.email_code) {
             document.getElementById('email-code-timeout').value = data.email_code.timeout || 120;
             document.getElementById('email-code-poll-interval').value = data.email_code.poll_interval || 3;
-            document.getElementById('email-code-resend-max-retries').value = data.email_code.resend_max_retries ?? 2;
-            document.getElementById('email-code-non-openai-sender-resend-max-retries').value = data.email_code.non_openai_sender_resend_max_retries ?? 1;
         }
 
         // 加载 Outlook 设置
@@ -583,23 +563,9 @@ async function handleSaveEmailCode(e) {
         return;
     }
 
-    const resendMaxRetries = parseInt(document.getElementById('email-code-resend-max-retries').value);
-    const nonOpenaiSenderResendMaxRetries = parseInt(document.getElementById('email-code-non-openai-sender-resend-max-retries').value);
-
-    if (resendMaxRetries < 0 || resendMaxRetries > 10) {
-        toast.error('重发次数必须在 0-10 之间');
-        return;
-    }
-    if (nonOpenaiSenderResendMaxRetries < 0 || nonOpenaiSenderResendMaxRetries > 10) {
-        toast.error('非 OpenAI 发件人重发次数必须在 0-10 之间');
-        return;
-    }
-
     const data = {
         timeout: timeout,
-        poll_interval: pollInterval,
-        resend_max_retries: resendMaxRetries,
-        non_openai_sender_resend_max_retries: nonOpenaiSenderResendMaxRetries
+        poll_interval: pollInterval
     };
 
     try {
@@ -863,16 +829,12 @@ function escapeHtml(text) {
 async function loadProxies() {
     try {
         const data = await api.get('/settings/proxies');
-        syncSelectedProxyIds(data.proxies || []);
         renderProxies(data.proxies);
     } catch (error) {
         console.error('加载代理列表失败:', error);
-        selectedProxyIds = new Set();
-        disabledProxyCount = 0;
-        updateProxyBatchActions();
         elements.proxiesTable.innerHTML = `
             <tr>
-                <td colspan="9">
+                <td colspan="7">
                     <div class="empty-state">
                         <div class="empty-state-icon">❌</div>
                         <div class="empty-state-title">加载失败</div>
@@ -886,12 +848,9 @@ async function loadProxies() {
 // 渲染代理列表
 function renderProxies(proxies) {
     if (!proxies || proxies.length === 0) {
-        selectedProxyIds = new Set();
-        disabledProxyCount = 0;
-        updateProxyBatchActions();
         elements.proxiesTable.innerHTML = `
             <tr>
-                <td colspan="9">
+                <td colspan="7">
                     <div class="empty-state">
                         <div class="empty-state-icon">🌐</div>
                         <div class="empty-state-title">暂无代理</div>
@@ -903,20 +862,8 @@ function renderProxies(proxies) {
         return;
     }
 
-    disabledProxyCount = proxies.filter((proxy) => proxy && proxy.enabled === false).length;
-
     elements.proxiesTable.innerHTML = proxies.map(proxy => `
         <tr data-proxy-id="${proxy.id}">
-            <td style="text-align:center;">
-                <input
-                    type="checkbox"
-                    class="proxy-checkbox"
-                    data-id="${proxy.id}"
-                    ${selectedProxyIds.has(proxy.id) ? 'checked' : ''}
-                    onchange="updateSelectedProxies()"
-                    aria-label="选择代理 ${proxy.id}"
-                >
-            </td>
             <td>${proxy.id}</td>
             <td>${escapeHtml(proxy.name)}</td>
             <td><span class="badge">${proxy.type.toUpperCase()}</span></td>
@@ -948,56 +895,6 @@ function renderProxies(proxies) {
             </td>
         </tr>
     `).join('');
-
-    updateProxyBatchActions();
-}
-
-function syncSelectedProxyIds(proxies) {
-    const validIds = new Set((proxies || []).map(proxy => proxy.id));
-    selectedProxyIds = new Set([...selectedProxyIds].filter(id => validIds.has(id)));
-}
-
-function toggleSelectAllProxies(checked) {
-    document.querySelectorAll('.proxy-checkbox').forEach((checkbox) => {
-        checkbox.checked = checked;
-    });
-    updateSelectedProxies();
-}
-
-function updateSelectedProxies() {
-    selectedProxyIds = new Set(
-        [...document.querySelectorAll('.proxy-checkbox:checked')]
-            .map((checkbox) => parseInt(checkbox.dataset.id, 10))
-            .filter((id) => Number.isInteger(id) && id > 0)
-    );
-    updateProxyBatchActions();
-}
-
-function updateProxyBatchActions() {
-    const proxyCheckboxes = [...document.querySelectorAll('.proxy-checkbox')];
-    const checkedCount = selectedProxyIds.size;
-
-    if (elements.selectAllProxies) {
-        const totalCount = proxyCheckboxes.length;
-        const allChecked = totalCount > 0 && checkedCount === totalCount;
-        elements.selectAllProxies.checked = allChecked;
-        elements.selectAllProxies.indeterminate = checkedCount > 0 && checkedCount < totalCount;
-        elements.selectAllProxies.disabled = totalCount === 0;
-    }
-
-    if (elements.batchDeleteProxiesBtn) {
-        elements.batchDeleteProxiesBtn.disabled = checkedCount === 0;
-        elements.batchDeleteProxiesBtn.textContent = checkedCount > 0
-            ? `🗑️ 批量删除 (${checkedCount})`
-            : '🗑️ 批量删除';
-    }
-
-    if (elements.deleteDisabledProxiesBtn) {
-        elements.deleteDisabledProxiesBtn.disabled = disabledProxyCount === 0;
-        elements.deleteDisabledProxiesBtn.textContent = disabledProxyCount > 0
-            ? `🧹 删除禁用项 (${disabledProxyCount})`
-            : '🧹 删除禁用项';
-    }
 }
 
 function toggleSettingsMoreMenu(btn) {
@@ -1155,49 +1052,6 @@ async function deleteProxyItem(id) {
         loadProxies();
     } catch (error) {
         toast.error('删除失败: ' + error.message);
-    }
-}
-
-async function handleBatchDeleteProxies() {
-    const ids = [...selectedProxyIds];
-    if (ids.length === 0) {
-        toast.error('请先选择要删除的代理');
-        return;
-    }
-
-    const confirmed = await confirm(`确定要批量删除选中的 ${ids.length} 个代理吗？`);
-    if (!confirmed) return;
-
-    try {
-        const result = await api.post('/settings/proxies/batch-delete', { ids });
-        const missingCount = Array.isArray(result.not_found_ids) ? result.not_found_ids.length : 0;
-        const summary = missingCount > 0
-            ? `${result.message}，其中 ${missingCount} 个代理不存在或已被删除`
-            : result.message;
-        toast.success(summary || `已删除 ${ids.length} 个代理`);
-        selectedProxyIds = new Set();
-        await loadProxies();
-    } catch (error) {
-        toast.error('批量删除失败: ' + error.message);
-    }
-}
-
-async function handleDeleteDisabledProxies() {
-    if (disabledProxyCount === 0) {
-        toast.error('当前没有可删除的禁用代理');
-        return;
-    }
-
-    const confirmed = await confirm(`确定要删除全部 ${disabledProxyCount} 个禁用代理吗？`);
-    if (!confirmed) return;
-
-    try {
-        const result = await api.post('/settings/proxies/delete-disabled');
-        selectedProxyIds = new Set();
-        toast.success(result.message || `已删除 ${result.deleted_count || 0} 个禁用代理`);
-        await loadProxies();
-    } catch (error) {
-        toast.error('删除禁用代理失败: ' + error.message);
     }
 }
 
@@ -1773,13 +1627,39 @@ async function handleTestCpaService() {
 
 let _sub2apiEditingId = null;
 
+function parseSub2ApiTargetGroupIds(rawValue) {
+    const normalized = [];
+    const text = String(rawValue || '').trim();
+    if (!text) return normalized;
+
+    for (const part of text.split(',')) {
+        const value = part.trim();
+        if (!value) continue;
+        if (!/^\d+$/.test(value) || Number(value) <= 0) {
+            throw new Error('目标分组 ID 只能填写正整数，并使用英文逗号分隔');
+        }
+        const numberValue = Number(value);
+        if (!normalized.includes(numberValue)) {
+            normalized.push(numberValue);
+        }
+    }
+    return normalized;
+}
+
+function formatSub2ApiTargetGroupIds(groupIds) {
+    if (!Array.isArray(groupIds) || groupIds.length === 0) {
+        return '未设置';
+    }
+    return groupIds.join(', ');
+}
+
 async function loadSub2ApiServices() {
     try {
         const services = await api.get('/sub2api-services');
         renderSub2ApiServices(services);
     } catch (e) {
         if (elements.sub2ApiServicesTable) {
-            elements.sub2ApiServicesTable.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">加载失败</td></tr>';
+            elements.sub2ApiServicesTable.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px;">加载失败</td></tr>';
         }
     }
 }
@@ -1787,13 +1667,14 @@ async function loadSub2ApiServices() {
 function renderSub2ApiServices(services) {
     if (!elements.sub2ApiServicesTable) return;
     if (!services || services.length === 0) {
-        elements.sub2ApiServicesTable.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">暂无 Sub2API 服务，点击「添加服务」新增</td></tr>';
+        elements.sub2ApiServicesTable.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px;">暂无 Sub2API 服务，点击「添加服务」新增</td></tr>';
         return;
     }
     elements.sub2ApiServicesTable.innerHTML = services.map(s => `
         <tr>
             <td>${escapeHtml(s.name)}</td>
             <td style="font-size:0.85rem;color:var(--text-muted);">${escapeHtml(s.api_url)}</td>
+            <td style="font-size:0.85rem;color:var(--text-muted);">${escapeHtml(formatSub2ApiTargetGroupIds(s.target_group_ids))}</td>
             <td style="text-align:center;" title="${s.enabled ? '已启用' : '已禁用'}">${s.enabled ? '✅' : '⭕'}</td>
             <td style="text-align:center;">${s.priority}</td>
             <td style="white-space:nowrap;">
@@ -1813,6 +1694,7 @@ function openSub2ApiServiceModal(svc = null) {
     if (svc) {
         document.getElementById('sub2api-service-name').value = svc.name || '';
         document.getElementById('sub2api-service-url').value = svc.api_url || '';
+        document.getElementById('sub2api-service-target-groups').value = Array.isArray(svc.target_group_ids) ? svc.target_group_ids.join(',') : '';
         document.getElementById('sub2api-service-priority').value = svc.priority ?? 0;
         document.getElementById('sub2api-service-enabled').checked = svc.enabled !== false;
         document.getElementById('sub2api-service-key').placeholder = svc.has_key ? '已配置，留空保持不变' : '请输入 API Key';
@@ -1849,10 +1731,18 @@ async function deleteSub2ApiService(id, name) {
 async function handleSaveSub2ApiService(e) {
     e.preventDefault();
     const id = document.getElementById('sub2api-service-id').value;
+    let targetGroupIds = [];
+    try {
+        targetGroupIds = parseSub2ApiTargetGroupIds(document.getElementById('sub2api-service-target-groups').value);
+    } catch (error) {
+        toast.error(error.message);
+        return;
+    }
     const data = {
         name: document.getElementById('sub2api-service-name').value,
         api_url: document.getElementById('sub2api-service-url').value,
         api_key: document.getElementById('sub2api-service-key').value || undefined,
+        target_group_ids: targetGroupIds,
         priority: parseInt(document.getElementById('sub2api-service-priority').value) || 0,
         enabled: document.getElementById('sub2api-service-enabled').checked,
     };
